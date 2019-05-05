@@ -1,0 +1,50 @@
+image: registry.gitlab.com/kolanich-subgroups/docker-images/fixed_python:latest
+
+variables:
+  DOCKER_DRIVER: overlay2
+  SAST_ANALYZER_IMAGE_TAG: latest
+  SAST_DISABLE_DIND: "true"
+  SAST_CONFIDENCE_LEVEL: 5
+  CODECLIMATE_VERSION: latest
+
+include:
+  - template: SAST.gitlab-ci.yml
+  - template: Code-Quality.gitlab-ci.yml
+
+stages:
+  - dependencies
+  - build
+  - test
+  - tooling
+
+build:
+  tags:
+    - shared
+  stage: build
+  variables:
+    GIT_DEPTH: "1"
+    PYTHONUSERBASE: "${CI_PROJECT_DIR}/python_user_packages"
+
+  before_script:
+    - export PATH="$PATH:$PYTHONUSERBASE/bin" # don't move into `variables`
+
+  cache:
+    paths:
+      - "$PYTHONUSERBASE"
+
+  script:
+    - python3 setup.py bdist_wheel
+    - mkdir wheels
+    - mv ./dist/*.whl ./wheels/Endianness-0.CI-py3-none-any.whl
+    - pip3 install --user --upgrade ./wheels/Endianness-0.CI-py3-none-any.whl
+    - python -m Endianness
+    - coverage run --source=Endianness -m pytest --junitxml=rspec.xml ./tests/tests.py
+    - coverage report -m || true
+    - coveralls || true
+    - codecov || true
+
+  artifacts:
+    paths:
+      - wheels
+    reports:
+      junit: rspec.xml
